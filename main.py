@@ -2,8 +2,9 @@ import telebot
 import whisper
 from database import DataBase
 from os import remove
+import config
 
-TOKEN = '5526025034:AAH79WzZ94vlrAxcsb125r6jRtO0wMIC5p0'
+TOKEN = config.TOKEN
 
 bot = telebot.TeleBot(TOKEN)
 
