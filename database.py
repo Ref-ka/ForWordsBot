@@ -33,5 +33,9 @@ class DataBase:
         self.cur.execute(f"INSERT INTO words VALUES ((?), (?), (?), (?))", (None, chat_id, eng_name, ru_name))
         self.conn.commit()
 
+    def upload_words(self, chat_id):
+        print(type(chat_id))
+        return self.fetchall(f"SELECT eng_word, ru_word FROM words WHERE chat_id == (?)", [chat_id])
+
     # def __del__(self):
     #     self.conn.close()
