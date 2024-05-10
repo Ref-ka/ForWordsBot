@@ -12,6 +12,7 @@ db = DataBase()
 
 load_cache = {}
 upload_cache = {}
+delete_cache = {}
 
 model = whisper.load_model("small")
 whisper.DecodingOptions(fp16=False)
@@ -82,6 +83,25 @@ def upload_words_format(message):
                 for line in data:
                     file.write(f"{' '.join(line)}\n")
             bot.send_document(message.chat.id, open(f'{message.chat.id}.txt', 'r'))
+
+
+@bot.message_handler(commands=['delete'])
+def delete_words(message):
+    msg = bot.reply_to(message, "Write english words to delete (separated by space)")
+    bot.register_next_step_handler(msg, delete_input_eng)
+
+
+def delete_input_eng(message: telebot.types.Message):
+    delete_cache[message.chat.id] = {'eng': [], 'ru': []}
+    delete_cache[message.chat.id]['eng'] += message.text.split()
+    msg = bot.reply_to(message, "Write russian words to delete (separated by space)")
+    bot.register_next_step_handler(msg, delete_input_ru)
+
+
+def delete_input_ru(message: telebot.types.Message):
+    delete_cache[message.chat.id]['ru'] += message.text.split()
+    db.delete_words(message.chat.id, delete_cache[message.chat.id])
+    bot.reply_to(message, 'Words successfully deleted!')
 
 
 bot.infinity_polling()

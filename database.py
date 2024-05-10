@@ -37,5 +37,13 @@ class DataBase:
         print(type(chat_id))
         return self.fetchall(f"SELECT eng_word, ru_word FROM words WHERE chat_id == (?)", [chat_id])
 
-    # def __del__(self):
-    #     self.conn.close()
+    def delete_words(self, chat_id: int, words: dict):
+        print(words)
+        for word in words['eng']:
+            self.cur.execute(f"DELETE FROM words WHERE chat_id == (?) AND eng_word == (?)", (chat_id, word))
+        for word in words['ru']:
+            self.cur.execute(f"DELETE FROM words WHERE chat_id == (?) AND ru_word == (?)", (chat_id, word))
+        self.conn.commit()
+
+    def __del__(self):
+        self.conn.close()
