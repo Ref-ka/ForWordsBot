@@ -29,11 +29,11 @@ class DataBase:
             self.cur.execute(arg, values)
         return self.cur.fetchall()
 
-    def load_words(self, chat_id, eng_name, ru_name):
+    def input_words(self, chat_id, eng_name, ru_name):
         self.cur.execute(f"INSERT INTO words VALUES ((?), (?), (?), (?))", (None, chat_id, eng_name, ru_name))
         self.conn.commit()
 
-    def upload_words(self, chat_id):
+    def output_words(self, chat_id):
         print(type(chat_id))
         return self.fetchall(f"SELECT eng_word, ru_word FROM words WHERE chat_id == (?)", [chat_id])
 

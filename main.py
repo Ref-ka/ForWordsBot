@@ -63,7 +63,7 @@ def process_ru_word(message):
         remove(f'{message.chat.id}.ogg')
     print(message.chat.id, load_cache[message.chat.id][0], load_cache[message.chat.id][1])
     print(type(message.chat.id), type(load_cache[message.chat.id][0]), type(load_cache[message.chat.id][1]))
-    db.load_words(message.chat.id, load_cache[message.chat.id][0], load_cache[message.chat.id][1])
+    db.input_words(message.chat.id, load_cache[message.chat.id][0], load_cache[message.chat.id][1])
     load_cache.pop(message.chat.id)
     bot.reply_to(message, 'The word has loaded successfully!')
 
@@ -75,7 +75,7 @@ def upload_words(message):
 
 
 def upload_words_format(message):
-    data = db.upload_words(message.chat.id)
+    data = db.output_words(message.chat.id)
     match message.text:
         case 'txt':
             print(data)
