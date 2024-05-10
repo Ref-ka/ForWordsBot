@@ -13,6 +13,7 @@ db = DataBase()
 load_cache = {}
 upload_cache = {}
 delete_cache = {}
+change_cache = {}
 
 model = whisper.load_model("small")
 whisper.DecodingOptions(fp16=False)
@@ -112,6 +113,29 @@ def show_words(message: telebot.types.Message):
     for line in data:
         msg += f"{line[0]} --- {line[1]}\n"
     bot.reply_to(message, msg)
+
+
+@bot.message_handler(commands=['change'])
+def change_word(message: telebot.types.Message):
+    change_cache[message.chat.id] = {'changeable': [], 'changed': []}
+    msg = bot.reply_to(message, "Write word to change\n"
+                                "Example(words need to be separated):\n"
+                                "(word on some lang) (abbreviation of lang)")
+    bot.register_next_step_handler(msg, change_word_changeable)
+
+
+def change_word_changeable(message: telebot.types.Message):
+    change_cache[message.chat.id]['changeable'] = message.text.split()
+    msg = bot.reply_to(message,
+                       "Write changes\nExample(words need to be separated):\n(changed eng word) (changed ru word)")
+    bot.register_next_step_handler(msg, change_words_changed)
+
+
+def change_words_changed(message: telebot.types.Message):
+    change_cache[message.chat.id]['changed'] = message.text.split()
+    print(change_cache[message.chat.id])
+    db.change_word(message.chat.id, change_cache[message.chat.id])
+    bot.reply_to(message, "Word changed successfully!")
 
 
 bot.infinity_polling()

@@ -45,5 +45,14 @@ class DataBase:
             self.cur.execute(f"DELETE FROM words WHERE chat_id == (?) AND ru_word == (?)", (chat_id, word))
         self.conn.commit()
 
+    def change_word(self, chat_id: int, words: dict):
+        if words['changeable'][1] == 'eng':
+            self.cur.execute("UPDATE words SET eng_word = (?), ru_word = (?) WHERE chat_id == (?) AND eng_word == (?)",
+                             [words['changed'][0], words['changed'][1], chat_id, words['changeable'][0]])
+        else:
+            self.cur.execute("UPDATE words SET eng_word = (?), ru_word = (?) WHERE chat_id == (?) AND ru_word == (?)",
+                             [words['changed'][0], words['changed'][1], chat_id, words['changeable'][0]])
+        self.conn.commit()
+
     def __del__(self):
         self.conn.close()
