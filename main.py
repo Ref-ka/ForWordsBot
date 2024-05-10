@@ -104,4 +104,14 @@ def delete_input_ru(message: telebot.types.Message):
     bot.reply_to(message, 'Words successfully deleted!')
 
 
+@bot.message_handler(commands=['show'])
+def show_words(message: telebot.types.Message):
+    print(db.output_words(message.chat.id))
+    data = db.output_words(message.chat.id)
+    msg = ""
+    for line in data:
+        msg += f"{line[0]} --- {line[1]}\n"
+    bot.reply_to(message, msg)
+
+
 bot.infinity_polling()
