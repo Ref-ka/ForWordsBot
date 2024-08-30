@@ -35,7 +35,7 @@ class DataBase:
 
     def output_words(self, chat_id):
         print(type(chat_id))
-        return self.fetchall(f"SELECT eng_word, ru_word FROM words WHERE chat_id == (?)", [chat_id])
+        return self.fetchall(f"SELECT id, eng_word, ru_word FROM words WHERE chat_id == (?)", [chat_id])
 
     def delete_words(self, chat_id: int, words: dict):
         print(words)
