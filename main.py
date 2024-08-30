@@ -111,7 +111,7 @@ def show_words(message: telebot.types.Message):
     data = db.output_words(message.chat.id)
     msg = ""
     for i, line in enumerate(data, 1):
-        upload_cache[i] = [line[0], line[1]]
+        upload_cache[message.chat.id] = {i: [line[0], line[1]]}
         msg += f"{i}. {line[1]} --- {line[2]}\n"
     bot.reply_to(message, msg)
 
