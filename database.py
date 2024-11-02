@@ -30,7 +30,7 @@ class DataBase:
         return self.cur.fetchall()
 
     def input_words(self, chat_id, eng_name, ru_name):
-        self.cur.execute(f"INSERT INTO words VALUES ((?), (?), (?), (?))", (None, chat_id, eng_name, ru_name))
+        self.cur.execute(f"INSERT INTO words VALUES ((?), (?), (?))", (chat_id, eng_name, ru_name))
         self.conn.commit()
 
     def output_words(self, chat_id):
