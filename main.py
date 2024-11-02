@@ -1,4 +1,5 @@
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 import whisper
 from database import DataBase
 from os import remove
@@ -13,9 +14,9 @@ db = DataBase()
 load_cache = {}
 upload_cache = {}
 delete_cache = {}
-change_cache = {}
+edit_cache = {}
 
-model = whisper.load_model("small")
+model = whisper.load_model("medium", device="cuda")
 whisper.DecodingOptions(fp16=False)
 
 
@@ -71,7 +72,7 @@ def process_ru_word(message):
 
 @bot.message_handler(commands=['upload'])
 def upload_words(message):
-    msg = bot.reply_to(message, "Chose format of uploaded words (txt, json, csv)")
+    msg = bot.reply_to(message, "Choose format of uploaded words (txt, json, csv)")
     bot.register_next_step_handler(msg, upload_words_format)
 
 
@@ -107,36 +108,55 @@ def delete_input_ru(message: telebot.types.Message):
 
 @bot.message_handler(commands=['show'])
 def show_words(message: telebot.types.Message):
-    print(db.output_words(message.chat.id))
     data = db.output_words(message.chat.id)
-    msg = ""
+    msg = "Your words:\n"
     for i, line in enumerate(data, 1):
-        upload_cache[message.chat.id] = {i: [line[0], line[1]]}
-        msg += f"{i}. {line[1]} --- {line[2]}\n"
-    bot.reply_to(message, msg)
+        if message.chat.id not in upload_cache:
+            upload_cache[message.chat.id] = {i: [line[0], line[1]]}
+        else:
+            upload_cache[message.chat.id][i] = [line[0], line[1]]
+        msg += f"{i}. {line[0]} --- {line[1]}\n"
+    bot.send_message(message.chat.id, msg)
 
 
-@bot.message_handler(commands=['change'])
-def change_word(message: telebot.types.Message):
-    change_cache[message.chat.id] = {'changeable': [], 'changed': []}
-    msg = bot.reply_to(message, "Write word to change\n"
-                                "Example(words need to be separated):\n"
-                                "(word on some lang) (abbreviation of lang)")
-    bot.register_next_step_handler(msg, change_word_changeable)
+@bot.message_handler(commands=['edit'])
+def edit_word(message: telebot.types.Message):
+    msg = bot.reply_to(message, "Write word index from /show")
+    bot.register_next_step_handler(msg, select_edit_option)
 
 
-def change_word_changeable(message: telebot.types.Message):
-    change_cache[message.chat.id]['changeable'] = message.text.split()
-    msg = bot.reply_to(message,
-                       "Write changes\nExample(words need to be separated):\n(changed eng word) (changed ru word)")
-    bot.register_next_step_handler(msg, change_words_changed)
+def select_edit_option(message: telebot.types.Message):
+    try:
+        print(upload_cache)
+        edit_cache[message.chat.id] = upload_cache[message.chat.id][int(message.text)]
+    except TypeError:
+        msg = bot.reply_to(message, 'You entered wrong id! son of a &^@#%')
+        bot.register_next_step_handler(msg, edit_word)
+    else:
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton('delete', callback_data='edit_cb_del'),
+                   InlineKeyboardButton('change', callback_data='edit_cb_change'))
+        bot.send_message(message.chat.id,
+                         f'Word for editing: \n{upload_cache[message.chat.id][int(message.text)]}',
+                         reply_markup=markup)
 
 
-def change_words_changed(message: telebot.types.Message):
-    change_cache[message.chat.id]['changed'] = message.text.split()
-    print(change_cache[message.chat.id])
-    db.change_word(message.chat.id, change_cache[message.chat.id])
-    bot.reply_to(message, "Word changed successfully!")
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    if call.data == 'edit_cb_del':
+        markup = InlineKeyboardMarkup()
+        markup.row_width = 1
+        markup.add(InlineKeyboardButton('yes', callback_data='edit_del_y'),
+                   InlineKeyboardButton('no', callback_data='edit_del_n'))
+        print(call.message.chat.id)
+        bot.edit_message_text(f'Deleting word: \n{edit_cache[call.message.chat.id]}\nConfirm?',
+                              call.message.chat.id,
+                              call.message.message_id,
+                              reply_markup=markup)
+    elif call.data == 'edit_del_y':
+        print(edit_cache)
+        db.delete_words(call.message.chat.id, edit_cache[call.message.chat.id][0])
+        show_words(call.message)
 
 
 bot.infinity_polling()
