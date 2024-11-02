@@ -35,15 +35,13 @@ class DataBase:
 
     def output_words(self, chat_id):
         print(type(chat_id))
-        return self.fetchall(f"SELECT id, eng_word, ru_word FROM words WHERE chat_id == (?)", [chat_id])
+        return self.fetchall(f"SELECT eng_word, ru_word FROM words WHERE chat_id == (?)", [chat_id])
 
-    def delete_words(self, chat_id: int, words: dict):
-        print(words)
-        for word in words['eng']:
-            self.cur.execute(f"DELETE FROM words WHERE chat_id == (?) AND eng_word == (?)", (chat_id, word))
-        for word in words['ru']:
-            self.cur.execute(f"DELETE FROM words WHERE chat_id == (?) AND ru_word == (?)", (chat_id, word))
+    def delete_words(self, chat_id: int, word: str):
+        print(chat_id, word)
+        self.cur.execute(f"DELETE FROM words WHERE chat_id == (?) AND eng_word == (?)", (chat_id, word))
         self.conn.commit()
+        print('deleted!')
 
     def change_word(self, chat_id: int, words: dict):
         if words['changeable'][1] == 'eng':
