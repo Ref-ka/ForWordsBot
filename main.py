@@ -12,7 +12,7 @@ bot = telebot.TeleBot(TOKEN)
 db = DataBase()
 
 load_cache = {}
-upload_cache = {}
+show_cache = {}
 delete_cache = {}
 edit_cache = {}
 
@@ -90,10 +90,10 @@ def show_words(message: telebot.types.Message):
     data = db.output_words(message.chat.id)
     msg = "Your words:\n"
     for i, line in enumerate(data, 1):
-        if message.chat.id not in upload_cache:
-            upload_cache[message.chat.id] = {i: [line[0], line[1]]}
+        if message.chat.id not in show_cache:
+            show_cache[message.chat.id] = {i: [line[0], line[1]]}
         else:
-            upload_cache[message.chat.id][i] = [line[0], line[1]]
+            show_cache[message.chat.id][i] = [line[0], line[1]]
         msg += f"{i}. {line[0]} --- {line[1]}\n"
     bot.send_message(message.chat.id, msg)
 
@@ -106,8 +106,8 @@ def edit_words(message: telebot.types.Message):
 
 def select_edit_option(message: telebot.types.Message):
     try:
-        print(upload_cache)
-        edit_cache[message.chat.id] = upload_cache[message.chat.id][int(message.text)]
+        print(show_cache)
+        edit_cache[message.chat.id] = show_cache[message.chat.id][int(message.text)]
     except TypeError:
         msg = bot.reply_to(message, 'You entered wrong id! son of a &^@#%')
         bot.register_next_step_handler(msg, edit_words)
@@ -116,7 +116,7 @@ def select_edit_option(message: telebot.types.Message):
         markup.add(InlineKeyboardButton('delete', callback_data='edit_cb_del'),
                    InlineKeyboardButton('change', callback_data='edit_cb_change'))
         bot.send_message(message.chat.id,
-                         f'Word for editing: \n{upload_cache[message.chat.id][int(message.text)]}',
+                         f'Word for editing: \n{show_cache[message.chat.id][int(message.text)]}',
                          reply_markup=markup)
 
 
@@ -136,6 +136,8 @@ def callback_query(call):
         print(edit_cache)
         db.delete_words(call.message.chat.id, edit_cache[call.message.chat.id][0])
         show_words(call.message)
+    elif call.data == 'edit_del_n':
+        edit_words(call.message)
 
 
 bot.infinity_polling()
