@@ -63,8 +63,6 @@ def process_ru_word(message):
     #     # whisper.DecodingOptions(language='ru', fp16=False)
     #     load_cache[message.chat.id].append(model.transcribe(f'{message.chat.id}.ogg', language='ru')['text'])
     #     remove(f'{message.chat.id}.ogg')
-    print(message.chat.id, load_cache[message.chat.id][0], load_cache[message.chat.id][1])
-    print(type(message.chat.id), type(load_cache[message.chat.id][0]), type(load_cache[message.chat.id][1]))
     db.input_words(message.chat.id, load_cache[message.chat.id][0], load_cache[message.chat.id][1])
     load_cache.pop(message.chat.id)
     bot.reply_to(message, 'The word has loaded successfully!')
@@ -87,25 +85,6 @@ def upload_words_format(message):
             bot.send_document(message.chat.id, open(f'{message.chat.id}.txt', 'r'))
 
 
-@bot.message_handler(commands=['delete'])
-def delete_words(message):
-    msg = bot.reply_to(message, "Write english words to delete (separated by space)")
-    bot.register_next_step_handler(msg, delete_input_eng)
-
-
-def delete_input_eng(message: telebot.types.Message):
-    delete_cache[message.chat.id] = {'eng': [], 'ru': []}
-    delete_cache[message.chat.id]['eng'] += message.text.split()
-    msg = bot.reply_to(message, "Write russian words to delete (separated by space)")
-    bot.register_next_step_handler(msg, delete_input_ru)
-
-
-def delete_input_ru(message: telebot.types.Message):
-    delete_cache[message.chat.id]['ru'] += message.text.split()
-    db.delete_words(message.chat.id, delete_cache[message.chat.id])
-    bot.reply_to(message, 'Words successfully deleted!')
-
-
 @bot.message_handler(commands=['show'])
 def show_words(message: telebot.types.Message):
     data = db.output_words(message.chat.id)
@@ -120,7 +99,7 @@ def show_words(message: telebot.types.Message):
 
 
 @bot.message_handler(commands=['edit'])
-def edit_word(message: telebot.types.Message):
+def edit_words(message: telebot.types.Message):
     msg = bot.reply_to(message, "Write word index from /show")
     bot.register_next_step_handler(msg, select_edit_option)
 
@@ -131,7 +110,7 @@ def select_edit_option(message: telebot.types.Message):
         edit_cache[message.chat.id] = upload_cache[message.chat.id][int(message.text)]
     except TypeError:
         msg = bot.reply_to(message, 'You entered wrong id! son of a &^@#%')
-        bot.register_next_step_handler(msg, edit_word)
+        bot.register_next_step_handler(msg, edit_words)
     else:
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton('delete', callback_data='edit_cb_del'),
