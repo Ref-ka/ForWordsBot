@@ -30,7 +30,7 @@ class DataBase:
         return self.cur.fetchall()
 
     def input_words(self, chat_id, eng_name, ru_name):
-        self.cur.execute(f"INSERT INTO words VALUES ((?), (?), (?))", (chat_id, eng_name, ru_name))
+        self.cur.execute(f"INSERT INTO words VALUES ((?), (?), (?), (?))", (chat_id, eng_name, ru_name, None))
         self.conn.commit()
 
     def output_words(self, chat_id):
@@ -44,12 +44,12 @@ class DataBase:
         print('deleted!')
 
     def change_word(self, chat_id: int, words: dict):
-        if words['changeable'][1] == 'eng':
-            self.cur.execute("UPDATE words SET eng_word = (?), ru_word = (?) WHERE chat_id == (?) AND eng_word == (?)",
-                             [words['changed'][0], words['changed'][1], chat_id, words['changeable'][0]])
+        if words["lang"] == 'en':
+            self.cur.execute("UPDATE words SET eng_word = (?) WHERE chat_id == (?) AND eng_word == (?)",
+                             [words['changed'], chat_id, words['changeable']])
         else:
-            self.cur.execute("UPDATE words SET eng_word = (?), ru_word = (?) WHERE chat_id == (?) AND ru_word == (?)",
-                             [words['changed'][0], words['changed'][1], chat_id, words['changeable'][0]])
+            self.cur.execute("UPDATE words SET ru_word = (?) WHERE chat_id == (?) AND eng_word == (?)",
+                             [words['changed'], chat_id, words['changeable']])
         self.conn.commit()
 
     def __del__(self):

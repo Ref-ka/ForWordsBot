@@ -15,6 +15,7 @@ load_cache = {}
 show_cache = {}
 delete_cache = {}
 edit_cache = {}
+change_cache = {}
 
 # model = whisper.load_model("medium", device="cuda")
 # whisper.DecodingOptions(fp16=False)
@@ -119,6 +120,21 @@ def select_edit_option(message: telebot.types.Message):
                          f'Word for editing: \n{show_cache[message.chat.id][int(message.text)]}',
                          reply_markup=markup)
 
+def enter_en_change(message: telebot.types.Message):
+    # {"lang": "en", "changeable": "old_word", "changed": "new_word"}
+    db.change_word(message.chat.id, {"lang": "en",
+                                     "changeable": edit_cache[message.chat.id],
+                                     "changed": message.text})
+    bot.send_message(message.chat.id, "Word has been changed!")
+    edit_words()
+
+def enter_ru_change(message: telebot.types.Message):
+    # {"lang": "en", "changeable": "old_word", "changed": "new_word"}
+    db.change_word(message.chat.id, {"lang": "ru",
+                                     "changeable": edit_cache[message.chat.id],
+                                     "changed": message.text})
+    bot.send_message(message.chat.id, "Word has been changed!")
+    edit_words()
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
@@ -138,6 +154,18 @@ def callback_query(call):
         show_words(call.message)
     elif call.data == 'edit_del_n':
         edit_words(call.message)
+    elif call.data == "edit_cb_change":
+        markup = InlineKeyboardMarkup()
+        markup.row_width = 1
+        markup.add(InlineKeyboardButton('en', callback_data='edit_change_en'),
+                   InlineKeyboardButton('ru', callback_data='edit_change_ru'))
+        bot.edit_message_text(f"Edit english or russian?\n{edit_cache[call.message.chat.id]}", reply_markup=markup)
+    elif call.data == "edit_change_en":
+        bot.edit_message_text("Enter new english word")
+        bot.register_next_step_handler(call.message, enter_en_change)
+    elif call.data == "edit_change_ru":
+        bot.edit_message_text("Enter new english word")
+        bot.register_next_step_handler(call.message, enter_ru_change)
 
 
 bot.infinity_polling()
