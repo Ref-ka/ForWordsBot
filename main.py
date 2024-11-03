@@ -23,8 +23,8 @@ change_cache = {}
 
 @bot.message_handler(commands=['start'])
 def send_instruction(message):
-    bot.reply_to(message, 'Hi!\nI can help you in learning english language!\nFor now I can remember words which you '
-                          'will input and make learning cards of these words.\nCommands: \\input_word, \\make cards')
+    bot.reply_to(message, 'Hi!\nI can help you in learning english language!\nFor now I can remember words you '
+                          'input, change them and delete them.\nCommands: \\menu \\load \\edit')
 
 
 @bot.message_handler(commands=['load'])
