@@ -31,7 +31,7 @@ def send_instruction(message):
     )
 
 
-@bot.message_handler(commands=['load'])
+@bot.message_handler(commands=['add'])
 def start_input(message):
     msg = bot.reply_to(message, "Let's make a card!\nSend to me a word on english")
     bot.register_next_step_handler(msg, process_eng_word)
@@ -52,7 +52,7 @@ def process_eng_word(message):
     #     load_cache[message.chat.id].append(model.transcribe(f'{message.chat.id}.ogg', language='en')['text'])
     #     remove(f'{message.chat.id}.ogg')
 
-    msg = bot.reply_to(message, "Send to me word on russian")
+    msg = bot.reply_to(message, "Send to me a word on russian")
     bot.register_next_step_handler(msg, process_ru_word)
 
 
