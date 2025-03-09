@@ -39,7 +39,7 @@ class DataBase:
                           lang))
         self.conn.commit()
 
-    def output_words(self, chat_id, group=None, lang=None):
+    def get_show_words(self, chat_id, group=None, lang=None):
         if group and lang:
             return self.fetchall(
                 'SELECT "foreign_word", "native_word", "group", "lang" FROM words WHERE "chat_id" = (?) AND "group" IN (?) AND "lang" = (?)',
@@ -74,6 +74,11 @@ class DataBase:
     #     self.conn.commit()
 
     # def change_word(self, chat_id: int, ):
+
+    def get_word_for_editing(self, chat_id: int, native_word: str, lang: str):
+        self.cur.execute('SELECT "foreign_word", "native_word", "group", "lang" FROM words WHERE "chat_id" = (?) AND "native_word" = (?) AND "lang" = (?)',
+                         (chat_id, native_word, lang))
+        return self.cur.fetchall()
 
     def change_native_word(self, chat_id: int, old_native_word: str, new_native_word: str, lang="all"):
         if lang == "all":
