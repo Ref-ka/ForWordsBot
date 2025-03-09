@@ -226,11 +226,9 @@ def select_edit_word(message):
                            'You need to write two words: word in native and lang code\nFor example: (target ru)')
         bot.register_next_step_handler(msg, edit_words)
         return
-    edit_cache[message.chat.id] = db.get_word_for_editing(message.chat.id, native, lang)[0]
-    if not edit_cache[message.chat.id]:
-        msg = bot.reply_to(message, "There are no any words with this pair of native word and lang!")
-        bot.register_next_step_handler(msg, select_edit_word)
-    else:
+    data = db.get_word_for_editing(message.chat.id, native, lang)
+    if data:
+        edit_cache[message.chat.id] = data[0]
         markup = InlineKeyboardMarkup(row_width=3)
         markup.add(
             InlineKeyboardButton('Delete', callback_data='edit_cb_del'),
@@ -238,6 +236,10 @@ def select_edit_word(message):
             InlineKeyboardButton('Move', callback_data='edit_cb_move')
         )
         bot.send_message(message.chat.id, f'Editing word:\n{edit_cache[message.chat.id]}', reply_markup=markup)
+    else:
+        msg = bot.reply_to(message, "There are no any words with this pair of native word and lang!\nEnter again:")
+        bot.register_next_step_handler(msg, select_edit_word)
+
 
 
 def enter_foreign_change(message):
@@ -259,16 +261,21 @@ def enter_native_change(message):
 
 
 def enter_group_change(message):
-    db.change_native_word(message.chat.id,
-                          edit_cache[message.chat.id][1],
-                          message.text,
-                          edit_cache[message.chat.id][3])
+    db.change_group(message.chat.id,
+                    edit_cache[message.chat.id][1],
+                    message.text,
+                    edit_cache[message.chat.id][3])
     bot.send_message(message.chat.id, "Group of word has been changed!")
     edit_cache.pop(message.chat.id, None)
 
 
 def enter_lang_change(message):
-    pass
+    db.chang_lang_code(message.chat.id,
+                       edit_cache[message.chat.id][1],
+                       message.text,
+                       edit_cache[message.chat.id][3])
+    bot.send_message(message.chat.id, "Lang code of word has been changed!")
+    edit_cache.pop(message.chat.id, None)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("edit_"))
@@ -311,9 +318,6 @@ def callback_query(call):
     elif call.data == "edit_change_lng":  # Change native word
         bot.edit_message_text("Enter new lang code:", call.message.chat.id, call.message.message_id)
         bot.register_next_step_handler(call.message, enter_lang_change)
-    elif call.data == "edit_cb_move":
-        bot.edit_message_text("Enter new group for this word:", call.message.chat.id, call.message.message_id)
-        bot.register_next_step_handler(call.message, enter_move)
 
 
 # -------------------------------

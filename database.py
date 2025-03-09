@@ -60,21 +60,6 @@ class DataBase:
         self.cur.execute('DELETE FROM words WHERE chat_id = (?) AND eng_word = (?)', (chat_id, word))
         self.conn.commit()
 
-    # def change_word(self, chat_id: int, words: dict):
-    #     if words["lang"] == 'en':
-    #         self.cur.execute('UPDATE words SET eng_word = ? WHERE chat_id = ? AND eng_word = ?',
-    #                          (words['changed'], chat_id, words['changeable']))
-    #     elif words["lang"] == 'ru':
-    #         self.cur.execute('UPDATE words SET ru_word = ? WHERE chat_id = ? AND eng_word = ?',
-    #                          (words['changed'], chat_id, words['changeable']))
-    #     elif words["lang"] == 'group':
-    #         # Update the group for the word identified by its foreign word
-    #         self.cur.execute('UPDATE words SET "group" = ? WHERE chat_id = ? AND eng_word = ?',
-    #                          (words['changed'], chat_id, words['word']))
-    #     self.conn.commit()
-
-    # def change_word(self, chat_id: int, ):
-
     def get_word_for_editing(self, chat_id: int, native_word: str, lang: str):
         self.cur.execute('SELECT "foreign_word", "native_word", "group", "lang" FROM words WHERE "chat_id" = (?) AND "native_word" = (?) AND "lang" = (?)',
                          (chat_id, native_word, lang))
@@ -97,13 +82,14 @@ class DataBase:
         self.conn.commit()
 
     def change_group(self, chat_id: int, native_word: str, group: str, lang: str):
-        self.cur.execute('UPDATE words SET group = (?) WHERE chat_id = (?) AND native_word = (?) AND lang = (?)',
+        print(group)
+        self.cur.execute('UPDATE words SET "group" = (?) WHERE "chat_id" = (?) AND "native_word" = (?) AND "lang" = (?)',
                          (group, chat_id, native_word, lang))
         self.conn.commit()
 
-    def chang_lang_code(self, chat_id: int, native_word: str, old_lang: str, new_lang: str):
+    def chang_lang_code(self, chat_id: int, native_word: str, new_lang: str, old_lang: str):
         self.cur.execute('UPDATE words SET lang = (?) WHERE chat_id = (?) AND native_word = (?) AND lang = (?)',
-                         (chat_id, new_lang, native_word, old_lang))
+                         (new_lang, chat_id, native_word, old_lang))
         self.conn.commit()
 
     def get_words_by_group(self, chat_id, group):
