@@ -93,7 +93,12 @@ class DataBase:
 
     def change_foreign_word(self, chat_id: int, native_word: str, foreign_word: str, lang: str):
         self.cur.execute('UPDATE words SET foreign_word = (?) WHERE chat_id = (?) AND native_word = (?) AND lang = (?)',
-                         (chat_id, foreign_word, native_word, lang))
+                         (foreign_word, chat_id, native_word, lang))
+        self.conn.commit()
+
+    def change_group(self, chat_id: int, native_word: str, group: str, lang: str):
+        self.cur.execute('UPDATE words SET group = (?) WHERE chat_id = (?) AND native_word = (?) AND lang = (?)',
+                         (group, chat_id, native_word, lang))
         self.conn.commit()
 
     def chang_lang_code(self, chat_id: int, native_word: str, old_lang: str, new_lang: str):

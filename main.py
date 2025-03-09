@@ -249,19 +249,26 @@ def enter_foreign_change(message):
     edit_cache.pop(message.chat.id, None)
 
 
-def enter_ru_change(message):
-    db.change_word(message.chat.id, {"lang": "ru", "changeable": edit_cache[message.chat.id][1], "changed": message.text})
+def enter_native_change(message):
+    db.change_native_word(message.chat.id,
+                          edit_cache[message.chat.id][1],
+                          message.text,
+                          edit_cache[message.chat.id][3])
     bot.send_message(message.chat.id, "Native word has been changed!")
     edit_cache.pop(message.chat.id, None)
 
 
-def enter_move(message):
-    new_group = message.text.strip() if message.text.strip() != "" else "default"
-    # Here we assume that the database method change_word (or move_word) can update the group.
-    # We pass the word (foreign) as an identifier.
-    db.change_word(message.chat.id, {"lang": "group", "changeable": edit_cache[message.chat.id][2], "changed": new_group, "word": edit_cache[message.chat.id][0]})
-    bot.send_message(message.chat.id, "Word has been moved to the new group!")
+def enter_group_change(message):
+    db.change_native_word(message.chat.id,
+                          edit_cache[message.chat.id][1],
+                          message.text,
+                          edit_cache[message.chat.id][3])
+    bot.send_message(message.chat.id, "Group of word has been changed!")
     edit_cache.pop(message.chat.id, None)
+
+
+def enter_lang_change(message):
+    pass
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("edit_"))
@@ -297,13 +304,13 @@ def callback_query(call):
         bot.register_next_step_handler(call.message, enter_foreign_change)
     elif call.data == "edit_change_ntv":  # Change native word
         bot.edit_message_text(call.message.text + "\nEnter new native word:", call.message.chat.id, call.message.message_id)
-        bot.register_next_step_handler(call.message, enter_ru_change)
+        bot.register_next_step_handler(call.message, enter_native_change)
     elif call.data == "edit_change_grp":  # Change native word
         bot.edit_message_text("Enter new group:", call.message.chat.id, call.message.message_id)
-        bot.register_next_step_handler(call.message, enter_ru_change)
+        bot.register_next_step_handler(call.message, enter_group_change)
     elif call.data == "edit_change_lng":  # Change native word
         bot.edit_message_text("Enter new lang code:", call.message.chat.id, call.message.message_id)
-        bot.register_next_step_handler(call.message, enter_ru_change)
+        bot.register_next_step_handler(call.message, enter_lang_change)
     elif call.data == "edit_cb_move":
         bot.edit_message_text("Enter new group for this word:", call.message.chat.id, call.message.message_id)
         bot.register_next_step_handler(call.message, enter_move)
