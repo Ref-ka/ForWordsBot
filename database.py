@@ -40,6 +40,10 @@ class DataBase:
         self.conn.commit()
 
     def get_show_words(self, chat_id, groups=None, langs=None):
+        if not groups:
+            groups = []
+        if not langs:
+            langs = []
         groups_placeholders = ", ".join(["?"] * len(groups))
         langs_placeholders = ", ".join(["?"] * len(langs))
         params = [chat_id] + groups + langs

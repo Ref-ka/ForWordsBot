@@ -8,7 +8,6 @@ import csv
 import json
 import time
 from database import DataBase
-from os import remove
 
 TOKEN = config.TOKEN
 bot = telebot.TeleBot(TOKEN)
@@ -37,11 +36,11 @@ def send_instruction(message):
         InlineKeyboardButton("Edit Word", callback_data="menu_edit"),
         InlineKeyboardButton("Show Words", callback_data="menu_show"),
         InlineKeyboardButton("Flashcards", callback_data="menu_flash"),
-        InlineKeyboardButton("Sort Words", callback_data="menu_sort"),
         InlineKeyboardButton("Set Reminder", callback_data="menu_reminder"),
-        InlineKeyboardButton("Export Words", callback_data="menu_export")
+        InlineKeyboardButton("Export Words", callback_data="menu_export"),
+        InlineKeyboardButton("Survey", callback_data="menu_survey")
     )
-    bot.send_message(message.chat.id, "Welcome to the Foreign Words Bot! Choose an option:", reply_markup=markup)
+    bot.send_message(message.chat.id, "Welcome to the ForWordsBot! Choose an option:", reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_"))
@@ -63,6 +62,9 @@ def menu_handler(call):
     elif call.data == "menu_export":
         bot.send_message(call.message.chat.id, "Choose export format: txt, csv, or json:")
         bot.register_next_step_handler(call.message, upload_words_format)
+    elif call.data == "menu_survey":
+        bot.send_message(call.message.chat.id, "You can take a survey about this telegram bot:\n"
+                                               "https://forms.gle/WTaK4Qed9GRKr8BcA")
 
 
 def cancel_fsm(func):
@@ -74,13 +76,14 @@ def cancel_fsm(func):
             func(message)
     return wrapper
 
+
 # -------------------------------
 # Adding new words (/add)
 # -------------------------------
 @bot.message_handler(commands=['add'])
 def start_input(message):
-    msg = bot.reply_to(message, "Let's make a card!\n"
-                                "Send to me the word in the foreign language.\n"
+    msg = bot.reply_to(message, "Let's add a new word or phrase!\n"
+                                "Send to me the word or phrase in the foreign language.\n"
                                 "If you want to input multiple translations,\n"
                                 "just write words separating them using ', '(comma and space)")
     bot.register_next_step_handler(msg, process_foreign_word)
@@ -112,11 +115,6 @@ def process_group(message):
     group = message.text.strip() if message.text.strip() != "" else "default"
     load_cache[message.chat.id].append(group)
     # Assume db.input_words now accepts three arguments: foreign, native, and group
-    print(message.chat.id,
-          load_cache[message.chat.id][0],
-          load_cache[message.chat.id][2],
-          group,
-          load_cache[message.chat.id][1])
     db.input_words(message.chat.id,
                    load_cache[message.chat.id][0],
                    load_cache[message.chat.id][2],
@@ -139,22 +137,22 @@ def upload_words_format(message):
     data = db.get_show_words(message.chat.id)  # Expecting list of tuples: (foreign, native, group)
     fmt = message.text.lower()
     if fmt == 'txt':
-        filename = f'{message.chat.id}.txt'
+        filename = f'words.txt'
         with open(filename, 'w', encoding='utf-8') as file:
             for line in data:
-                file.write(f"{line[0]} --- {line[1]} (Group: {line[2]})\n")
+                file.write(f"{line[0]} --- {line[1]}\n")
         bot.send_document(message.chat.id, open(filename, 'rb'))
     elif fmt == 'csv':
-        filename = f'{message.chat.id}.csv'
+        filename = f'words.csv'
         with open(filename, 'w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
-            writer.writerow(["Foreign", "Native", "Group"])
+            writer.writerow(["Foreign", "Native"])
             for line in data:
-                writer.writerow([line[0], line[1], line[2]])
+                writer.writerow([line[0], line[1]])
         bot.send_document(message.chat.id, open(filename, 'rb'))
     elif fmt == 'json':
-        filename = f'{message.chat.id}.json'
-        words_list = [{"foreign": line[0], "native": line[1], "group": line[2]} for line in data]
+        filename = f'words.json'
+        words_list = [{"foreign": line[0], "native": line[1]} for line in data]
         with open(filename, 'w', encoding='utf-8') as file:
             json.dump(words_list, file, ensure_ascii=False, indent=2)
         bot.send_document(message.chat.id, open(filename, 'rb'))
@@ -167,15 +165,9 @@ def upload_words_format(message):
 # -------------------------------
 @bot.message_handler(commands=['show'])
 def show_words(message):
-    # data = db.output_words(message.chat.id)
-    # msg_text = "Your words:\n"
-    # show_cache[message.chat.id] = {}
-    # for i, line in enumerate(data, 1):
-    #     show_cache[message.chat.id][i] = line  # each line: (foreign, native, group)
-    #     msg_text += f"{i}. {line[0]} --- {line[1]} (Group: {line[2]}, Lang: {line[3]})\n"
     msg = bot.reply_to(message,
                        "What group do you want to see?\n"
-                       "If you want to see multiple groups just write them separating by ', '(comma and space)\n"
+                       "If you want to see multiple groups\njust write them separating by ', '(comma and space)\n"
                        "If you want to see all groups write 'all'")
     bot.register_next_step_handler(msg, process_group_show)
 
@@ -189,7 +181,7 @@ def process_group_show(message):
         show_cache[message.chat.id] = {"groups": groups}
     msg = bot.reply_to(message,
                        "What languages do you want to see?\n"
-                       "If you want to see multiple langs just write them separating by ', '(comma and space)\n"
+                       "If you want to see multiple langs\njust write them separating by ', '(comma and space)\n"
                        "If you want to see all lang write 'all'")
     bot.register_next_step_handler(msg, final_show)
 
@@ -202,9 +194,9 @@ def final_show(message):
     else:
         show_cache[message.chat.id]["langs"] = langs
     data = db.get_show_words(message.chat.id, show_cache[message.chat.id]["groups"], show_cache[message.chat.id]["langs"])
-    msg_text = "Your words:\n"
+    msg_text = "Your words:\n\n"
     for line in data:
-        msg_text += f"{line[0]}  --  {line[1]} \n    Group: {line[2]}, Lang: {line[3]}\n"
+        msg_text += f"{line[1]}  --  {line[0]} \n    Group: {line[2]}, Lang: {line[3]}\n\n"
     bot.send_message(message.chat.id, msg_text)
 
 
@@ -292,7 +284,7 @@ def callback_query(call):
                               call.message.message_id,
                               reply_markup=markup)
     elif call.data == 'edit_del_y':
-        db.delete_word(call.message.chat.id, edit_cache[call.message.chat.id][1], edit_cache[call.message.chat.id][2])
+        db.delete_word(call.message.chat.id, edit_cache[call.message.chat.id][1], edit_cache[call.message.chat.id][3])
         bot.send_message(call.message.chat.id, "Word deleted successfully.")
         edit_cache.pop(call.message.chat.id, None)
     elif call.data == 'edit_del_n':
@@ -352,7 +344,7 @@ def sort_words(message):
 @bot.message_handler(commands=['flash'])
 def start_flashcards(message):
     markup = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("Yes"), KeyboardButton("No"))
-    msg = bot.send_message(message.chat.id, "Do you want to flashcards to be randomized?", reply_markup=markup)
+    msg = bot.send_message(message.chat.id, "Do you want the flashcards to be randomized?", reply_markup=markup)
     bot.register_next_step_handler(msg, process_flashcard_random)
 
 
@@ -466,6 +458,11 @@ def flash_callback(call):
 # -------------------------------
 # Reminder Functionality
 # -------------------------------
+@bot.message_handler(commands=["set_reminder"])
+def make_reminder(message):
+    msg = bot.send_message(message.chat.id, "Enter the group for which to set a reminder (or type 'all'):")
+    bot.register_next_step_handler(msg, process_reminder_group)
+
 
 # Step 1: Process the group for the reminder
 @cancel_fsm
@@ -499,17 +496,24 @@ def process_reminder_time(message):
 
     # Save the interval and start the reminder
     reminder_cache[chat_id]["interval"] = interval
+    reminder_cache[chat_id]["time_input"] = time_input
     group = reminder_cache[chat_id]["group"]
-    start_reminder(chat_id, group, interval)
+    start_reminder(chat_id, group, interval, time_input)
     bot.send_message(chat_id, f"Reminder set for group '{group}' every {time_input}. Use /reminders to manage reminders.")
 
 
 # Step 3: Start the reminder
-def start_reminder(chat_id, group, interval):
+def start_reminder(chat_id, group, interval, time_input):
     if chat_id in reminder_timers:
-        reminder_timers[chat_id].append({"group": group, "interval": interval, "active": True})
+        reminder_timers[chat_id].append({"group": group,
+                                         "interval": interval,
+                                         "time_input": time_input,
+                                         "active": True})
     else:
-        reminder_timers[chat_id] = [{"group": group, "interval": interval, "active": True}]
+        reminder_timers[chat_id] = [{"group": group,
+                                     "interval": interval,
+                                     "time_input": time_input,
+                                     "active": True}]
 
     # Start a background thread for the reminder
     def reminder_thread():
@@ -533,17 +537,18 @@ def list_reminders(message):
     response = "Your active reminders:\n"
     for i, reminder in enumerate(reminder_timers[chat_id], start=1):
         status = "Active" if reminder["active"] else "Inactive"
-        response += f"{i}. Group: {reminder['group']}, Interval: {reminder['interval']} seconds, Status: {status}\n"
+        response += f"{i}. Group: {reminder['group']}, Interval: {reminder['time_input']}, Status: {status}\n"
+    response += "\nTo stop a reminder, use /stop_reminder <number>."
+    response += "\nTo run a reminder, use /run_reminder <number>."
     response += "\nTo delete a reminder, use /delete_reminder <number>."
     bot.send_message(chat_id, response)
 
 
-# Step 5: Delete a reminder
-@bot.message_handler(commands=["delete_reminder"])
-def delete_reminder(message):
+@bot.message_handler(commands=["stop_reminder"])
+def stop_reminder(message):
     chat_id = message.chat.id
     if chat_id not in reminder_timers or not reminder_timers[chat_id]:
-        bot.send_message(chat_id, "You have no active reminders to delete.")
+        bot.send_message(chat_id, "You have no active reminders to stop.")
         return
 
     try:
@@ -551,6 +556,41 @@ def delete_reminder(message):
         if index < 0 or index >= len(reminder_timers[chat_id]):
             raise IndexError("Invalid index")
         reminder_timers[chat_id][index]["active"] = False
+        bot.send_message(chat_id, f"Reminder {index + 1} has been stopped.")
+    except (IndexError, ValueError):
+        bot.send_message(chat_id, "Invalid command. Use /stop_reminder <number> to stop a reminder.")
+
+
+@bot.message_handler(commands=["run_reminder"])
+def run_reminder(message):
+    chat_id = message.chat.id
+    if chat_id not in reminder_timers or not reminder_timers[chat_id]:
+        bot.send_message(chat_id, "You have no inactive reminders to run.")
+        return
+
+    try:
+        index = int(message.text.split()[1]) - 1
+        if index < 0 or index >= len(reminder_timers[chat_id]):
+            raise IndexError("Invalid index")
+        reminder_timers[chat_id][index]["active"] = True
+        bot.send_message(chat_id, f"Reminder {index + 1} has been launched.")
+    except (IndexError, ValueError):
+        bot.send_message(chat_id, "Invalid command. Use /stop_reminder <number> to run a reminder.")
+
+
+# Step 5: Delete a reminder
+@bot.message_handler(commands=["delete_reminder"])
+def delete_reminder(message):
+    chat_id = message.chat.id
+    if chat_id not in reminder_timers or not reminder_timers[chat_id]:
+        bot.send_message(chat_id, "You have no reminders to delete.")
+        return
+
+    try:
+        index = int(message.text.split()[1]) - 1
+        if index < 0 or index >= len(reminder_timers[chat_id]):
+            raise IndexError("Invalid index")
+        reminder_timers[chat_id].pop(index)
         bot.send_message(chat_id, f"Reminder {index + 1} has been deleted.")
     except (IndexError, ValueError):
         bot.send_message(chat_id, "Invalid command. Use /delete_reminder <number> to delete a reminder.")
