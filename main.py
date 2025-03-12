@@ -6,6 +6,7 @@ import threading
 import random
 import csv
 import json
+import time
 from database import DataBase
 from os import remove
 
@@ -185,7 +186,7 @@ def process_group_show(message):
     if groups == ["all"]:
         show_cache[message.chat.id] = {"groups": []}
     else:
-        show_cache[message.chat.id] = {"groups": [message.text.split(", ")]}
+        show_cache[message.chat.id] = {"groups": groups}
     msg = bot.reply_to(message,
                        "What languages do you want to see?\n"
                        "If you want to see multiple langs just write them separating by ', '(comma and space)\n"
@@ -232,8 +233,7 @@ def select_edit_word(message):
         markup = InlineKeyboardMarkup(row_width=3)
         markup.add(
             InlineKeyboardButton('Delete', callback_data='edit_cb_del'),
-            InlineKeyboardButton('Change', callback_data='edit_cb_change'),
-            InlineKeyboardButton('Move', callback_data='edit_cb_move')
+            InlineKeyboardButton('Change', callback_data='edit_cb_change')
         )
         bot.send_message(message.chat.id, f'Editing word:\n{edit_cache[message.chat.id]}', reply_markup=markup)
     else:
@@ -241,7 +241,7 @@ def select_edit_word(message):
         bot.register_next_step_handler(msg, select_edit_word)
 
 
-
+@cancel_fsm
 def enter_foreign_change(message):
     db.change_foreign_word(message.chat.id,
                            edit_cache[message.chat.id][1],
@@ -251,6 +251,7 @@ def enter_foreign_change(message):
     edit_cache.pop(message.chat.id, None)
 
 
+@cancel_fsm
 def enter_native_change(message):
     db.change_native_word(message.chat.id,
                           edit_cache[message.chat.id][1],
@@ -260,6 +261,7 @@ def enter_native_change(message):
     edit_cache.pop(message.chat.id, None)
 
 
+@cancel_fsm
 def enter_group_change(message):
     db.change_group(message.chat.id,
                     edit_cache[message.chat.id][1],
@@ -269,11 +271,12 @@ def enter_group_change(message):
     edit_cache.pop(message.chat.id, None)
 
 
+@cancel_fsm
 def enter_lang_change(message):
-    db.chang_lang_code(message.chat.id,
-                       edit_cache[message.chat.id][1],
-                       message.text,
-                       edit_cache[message.chat.id][3])
+    db.change_lang_code(message.chat.id,
+                        edit_cache[message.chat.id][1],
+                        message.text,
+                        edit_cache[message.chat.id][3])
     bot.send_message(message.chat.id, "Lang code of word has been changed!")
     edit_cache.pop(message.chat.id, None)
 
@@ -284,12 +287,14 @@ def callback_query(call):
         markup = InlineKeyboardMarkup(row_width=2)
         markup.add(InlineKeyboardButton('Yes', callback_data='edit_del_y'),
                    InlineKeyboardButton('No', callback_data='edit_del_n'))
-        bot.edit_message_text(f'Deleting word:\n{edit_cache[call.message.chat.id]}\nConfirm?', call.message.chat.id, call.message.message_id, reply_markup=markup)
+        bot.edit_message_text(f'Deleting word:\n{edit_cache[call.message.chat.id]}\nConfirm?',
+                              call.message.chat.id,
+                              call.message.message_id,
+                              reply_markup=markup)
     elif call.data == 'edit_del_y':
-        db.delete_words(call.message.chat.id, edit_cache[call.message.chat.id][0])
+        db.delete_word(call.message.chat.id, edit_cache[call.message.chat.id][1], edit_cache[call.message.chat.id][2])
         bot.send_message(call.message.chat.id, "Word deleted successfully.")
         edit_cache.pop(call.message.chat.id, None)
-        show_words(call.message)
     elif call.data == 'edit_del_n':
         bot.send_message(call.message.chat.id, "Deletion cancelled.")
     elif call.data == "edit_cb_change":  # Change word info
@@ -310,7 +315,9 @@ def callback_query(call):
                               reply_markup=markup)
         bot.register_next_step_handler(call.message, enter_foreign_change)
     elif call.data == "edit_change_ntv":  # Change native word
-        bot.edit_message_text(call.message.text + "\nEnter new native word:", call.message.chat.id, call.message.message_id)
+        bot.edit_message_text(call.message.text + "\nEnter new native word:",
+                              call.message.chat.id,
+                              call.message.message_id)
         bot.register_next_step_handler(call.message, enter_native_change)
     elif call.data == "edit_change_grp":  # Change native word
         bot.edit_message_text("Enter new group:", call.message.chat.id, call.message.message_id)
@@ -343,87 +350,210 @@ def sort_words(message):
 # Flashcards (/flash)
 # -------------------------------
 @bot.message_handler(commands=['flash'])
-def flashcards_command(message):
-    start_flashcards(message)
-
-
 def start_flashcards(message):
-    data = db.get_show_words(message.chat.id)
-    if not data:
-        bot.send_message(message.chat.id, "No words available for flashcards.")
+    markup = ReplyKeyboardMarkup(resize_keyboard=True).add(KeyboardButton("Yes"), KeyboardButton("No"))
+    msg = bot.send_message(message.chat.id, "Do you want to flashcards to be randomized?", reply_markup=markup)
+    bot.register_next_step_handler(msg, process_flashcard_random)
+
+
+@cancel_fsm
+def process_flashcard_random(message):
+    if message.text == "Yes":
+        flash_cache[message.chat.id] = {"random": True}
+    elif message.text == "No":
+        flash_cache[message.chat.id] = {"random": False}
+    else:
+        msg = bot.reply_to(message, "Your answer isn't correct. You need to just write 'Yes' or 'No'.")
+        bot.register_next_step_handler(msg, process_flashcard_random)
         return
-    flash_cache[message.chat.id] = {"words": data, "index": 0}
-    word = flash_cache[message.chat.id]["words"][0]
+
+    msg = bot.reply_to(message,
+                       "Select groups for flashcards (comma with space separated) or type 'all' for all groups:")
+    bot.register_next_step_handler(msg, process_flashcard_groups)
+
+
+@cancel_fsm
+def process_flashcard_groups(message):
+    groups = message.text.split(", ") if message.text.lower() != "all" else []
+    flash_cache[message.chat.id]["groups"] = groups
+
+    msg = bot.reply_to(message, "Select languages (comma and space separated) or type 'all' for all languages:")
+    bot.register_next_step_handler(msg, process_flashcard_languages)
+
+
+@cancel_fsm
+def process_flashcard_languages(message):
+    langs = message.text.split(", ") if message.text.lower() != "all" else []
+    flash_cache[message.chat.id]["langs"] = langs
+
+    # Fetch filtered words from the database
+    data = db.get_flash_words(message.chat.id, flash_cache[message.chat.id]["groups"], langs)
+
+    if not data:
+        bot.send_message(message.chat.id, "No words found for the selected filters.")
+        return
+
+    # Check if randomization is enabled and shuffle words
+    if flash_cache[message.chat.id]["random"]:
+        random.shuffle(data)
+
+    flash_cache[message.chat.id]["words"] = data
+    flash_cache[message.chat.id]["index"] = 0
+
+    show_flashcard(message.chat.id)
+
+
+def show_flashcard(chat_id, message_id=None):
+    """Edits the current flashcard message instead of sending a new one."""
+    index = flash_cache[chat_id]["index"]
+    words = flash_cache[chat_id]["words"]
+
+    if index >= len(words):  # All words checked
+        offer_retry(chat_id, message_id)
+        return
+
+    word = words[index]
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("Show Answer", callback_data="flash_show"))
-    bot.send_message(message.chat.id, f"Flashcard:\nWord: {word[0]}\nWhat is the translation?", reply_markup=markup)
+
+    if message_id:
+        bot.edit_message_text(f"Flashcard:\nWord: {word[0]}\nWhat is the translation?",
+                              chat_id, message_id, reply_markup=markup)
+    else:
+        msg = bot.send_message(chat_id, f"Flashcard:\nWord: {word[0]}\nWhat is the translation?", reply_markup=markup)
+        flash_cache[chat_id]["message_id"] = msg.message_id  # Store the message ID
+
+
+def offer_retry(chat_id, message_id):
+    """Edits the message to offer retry options."""
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton("🔄 Retry These Words", callback_data="flash_retry"),
+        InlineKeyboardButton("📂 Choose New Groups/Languages", callback_data="flash_new")
+    )
+
+    bot.edit_message_text("You've gone through all words! What do you want to do next?",
+                          chat_id, message_id, reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data in ["flash_retry", "flash_new"])
+def handle_retry_option(call):
+    chat_id = call.message.chat.id
+    if call.data == "flash_retry":
+        flash_cache[chat_id]["index"] = 0  # Reset index
+        show_flashcard(chat_id)
+    elif call.data == "flash_new":
+        bot.send_message(chat_id, "Let's choose new words! Enter the groups you want to study:")
+        bot.register_next_step_handler(call.message, process_flashcard_groups)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("flash_"))
 def flash_callback(call):
     chat_id = call.message.chat.id
+    index = flash_cache[chat_id]["index"]
+    word = flash_cache[chat_id]["words"][index]
+
     if call.data == "flash_show":
-        index = flash_cache[chat_id]["index"]
-        word = flash_cache[chat_id]["words"][index]
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("Next", callback_data="flash_next"))
-        bot.edit_message_text(f"Flashcard:\nWord: {word[0]}\nTranslation: {word[1]}", chat_id, call.message.message_id, reply_markup=markup)
+        bot.edit_message_text(f"Flashcard:\nWord: {word[0]}\nTranslation: {word[1]}",
+                              chat_id, call.message.message_id, reply_markup=markup)
     elif call.data == "flash_next":
-        flash_cache[chat_id]["index"] = (flash_cache[chat_id]["index"] + 1) % len(flash_cache[chat_id]["words"])
-        index = flash_cache[chat_id]["index"]
-        word = flash_cache[chat_id]["words"][index]
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("Show Answer", callback_data="flash_show"))
-        bot.edit_message_text(f"Flashcard:\nWord: {word[0]}\nWhat is the translation?", chat_id, call.message.message_id, reply_markup=markup)
+        flash_cache[chat_id]["index"] += 1
+        show_flashcard(chat_id, call.message.message_id)  # Pass the existing message ID
 
 
 # -------------------------------
-# Reminders (/setreminder)
+# Reminder Functionality
 # -------------------------------
-@bot.message_handler(commands=['setreminder'])
-def set_reminder_command(message):
-    msg = bot.reply_to(message, "Enter the group for which to set a reminder (or type 'all'):")
-    bot.register_next_step_handler(msg, process_reminder_group)
 
-
+# Step 1: Process the group for the reminder
+@cancel_fsm
 def process_reminder_group(message):
-    group = message.text.strip().lower()
+    group = message.text.strip()
     reminder_cache[message.chat.id] = {"group": group}
-    msg = bot.reply_to(message, "Enter reminder interval in minutes:")
-    bot.register_next_step_handler(msg, process_reminder_interval)
+    bot.send_message(message.chat.id, "Enter the time interval for the reminder (e.g., '10m', '2h', '1d'):")
+    bot.register_next_step_handler(message, process_reminder_time)
 
 
-def process_reminder_interval(message):
+# Step 2: Process the time interval for the reminder
+@cancel_fsm
+def process_reminder_time(message):
+    time_input = message.text.strip().lower()
+    chat_id = message.chat.id
+
+    # Parse the time input
+    time_mapping = {"m": 60, "h": 3600, "d": 86400}
     try:
-        interval = int(message.text)
-    except ValueError:
-        bot.send_message(message.chat.id, "Invalid interval. Please enter a number.")
+        unit = time_input[-1]
+        value = int(time_input[:-1])
+        if unit not in time_mapping:
+            raise ValueError("Invalid time unit")
+        interval = value * time_mapping[unit]
+        if interval < 60 or interval > 2592000:  # Minimum 1 minute, maximum 1 month
+            raise ValueError("Time out of range")
+    except (ValueError, IndexError):
+        bot.send_message(chat_id, "Invalid time format. Please try again (e.g., '10m', '2h', '1d'):")
+        bot.register_next_step_handler(message, process_reminder_time)
         return
-    reminder_cache[message.chat.id]["interval"] = interval
-    bot.send_message(message.chat.id, f"Reminder set for group '{reminder_cache[message.chat.id]['group']}' every {interval} minutes.")
-    schedule_reminder(message.chat.id, reminder_cache[message.chat.id]["group"], interval)
+
+    # Save the interval and start the reminder
+    reminder_cache[chat_id]["interval"] = interval
+    group = reminder_cache[chat_id]["group"]
+    start_reminder(chat_id, group, interval)
+    bot.send_message(chat_id, f"Reminder set for group '{group}' every {time_input}. Use /reminders to manage reminders.")
 
 
-def schedule_reminder(chat_id, group, interval):
-    def send_reminder():
-        if group == "all":
-            data = db.get_show_words(chat_id)
-        else:
-            # Assuming your database module has this function; otherwise, filter locally.
-            data = db.get_words_by_group(chat_id, group)
-        if data:
-            msg_text = f"Reminder for group '{group}':\n"
-            for i, line in enumerate(data, 1):
-                msg_text += f"{i}. {line[0]} --- {line[1]}\n"
-            bot.send_message(chat_id, msg_text)
-        # Reschedule the reminder
-        t = threading.Timer(interval * 60, send_reminder)
-        t.start()
-        reminder_timers[chat_id] = t
+# Step 3: Start the reminder
+def start_reminder(chat_id, group, interval):
+    if chat_id in reminder_timers:
+        reminder_timers[chat_id].append({"group": group, "interval": interval, "active": True})
+    else:
+        reminder_timers[chat_id] = [{"group": group, "interval": interval, "active": True}]
 
-    t = threading.Timer(interval * 60, send_reminder)
-    t.start()
-    reminder_timers[chat_id] = t
+    # Start a background thread for the reminder
+    def reminder_thread():
+        while any(r["active"] for r in reminder_timers[chat_id]):
+            for reminder in reminder_timers[chat_id]:
+                if reminder["active"]:
+                    bot.send_message(chat_id, f"Reminder: Review your words in group '{reminder['group']}'!")
+                    time.sleep(reminder["interval"])
+
+    threading.Thread(target=reminder_thread, daemon=True).start()
+
+
+# Step 4: List active reminders
+@bot.message_handler(commands=["reminders"])
+def list_reminders(message):
+    chat_id = message.chat.id
+    if chat_id not in reminder_timers or not reminder_timers[chat_id]:
+        bot.send_message(chat_id, "You have no active reminders.")
+        return
+
+    response = "Your active reminders:\n"
+    for i, reminder in enumerate(reminder_timers[chat_id], start=1):
+        status = "Active" if reminder["active"] else "Inactive"
+        response += f"{i}. Group: {reminder['group']}, Interval: {reminder['interval']} seconds, Status: {status}\n"
+    response += "\nTo delete a reminder, use /delete_reminder <number>."
+    bot.send_message(chat_id, response)
+
+
+# Step 5: Delete a reminder
+@bot.message_handler(commands=["delete_reminder"])
+def delete_reminder(message):
+    chat_id = message.chat.id
+    if chat_id not in reminder_timers or not reminder_timers[chat_id]:
+        bot.send_message(chat_id, "You have no active reminders to delete.")
+        return
+
+    try:
+        index = int(message.text.split()[1]) - 1
+        if index < 0 or index >= len(reminder_timers[chat_id]):
+            raise IndexError("Invalid index")
+        reminder_timers[chat_id][index]["active"] = False
+        bot.send_message(chat_id, f"Reminder {index + 1} has been deleted.")
+    except (IndexError, ValueError):
+        bot.send_message(chat_id, "Invalid command. Use /delete_reminder <number> to delete a reminder.")
 
 
 # -------------------------------

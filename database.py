@@ -39,25 +39,34 @@ class DataBase:
                           lang))
         self.conn.commit()
 
-    def get_show_words(self, chat_id, group=None, lang=None):
-        if group and lang:
+    def get_show_words(self, chat_id, groups=None, langs=None):
+        groups_placeholders = ", ".join(["?"] * len(groups))
+        langs_placeholders = ", ".join(["?"] * len(langs))
+        params = [chat_id] + groups + langs
+        if groups and langs:
             return self.fetchall(
-                'SELECT "foreign_word", "native_word", "group", "lang" FROM words WHERE "chat_id" = (?) AND "group" IN (?) AND "lang" = (?)',
-                (chat_id, group, lang))
-        elif group and not lang:
+                f'SELECT "foreign_word", "native_word", "group", "lang" '
+                f'FROM words WHERE "chat_id" = (?) '
+                f'AND "group" IN ({groups_placeholders}) AND "lang" = ({langs_placeholders})',
+                params)
+        elif groups and not langs:
             return self.fetchall(
-                'SELECT "foreign_word", "native_word", "group", "lang" FROM words WHERE "chat_id" = (?) AND "group" = (?)',
-                (chat_id, group))
-        elif not group and lang:
+                f'SELECT "foreign_word", "native_word", "group", "lang" '
+                f'FROM words WHERE "chat_id" = (?) AND "group" = ({groups_placeholders})',
+                params)
+        elif not groups and langs:
             return self.fetchall(
-                'SELECT "foreign_word", "native_word", "group", "lang" FROM words WHERE "chat_id" = (?) AND "lang" = (?)',
-                (chat_id, lang))
+                f'SELECT "foreign_word", "native_word", "group", "lang" '
+                f'FROM words WHERE "chat_id" = (?) AND "lang" = ({langs_placeholders})',
+                params)
         else:
-            return self.fetchall('SELECT "foreign_word", "native_word", "group", "lang" FROM words WHERE "chat_id" = (?)',
-                                 (chat_id,))
+            return self.fetchall(
+                'SELECT "foreign_word", "native_word", "group", "lang" FROM words WHERE "chat_id" = (?)',
+                params)
 
-    def delete_words(self, chat_id: int, word: str):
-        self.cur.execute('DELETE FROM words WHERE chat_id = (?) AND eng_word = (?)', (chat_id, word))
+    def delete_word(self, chat_id: int, native: str, lang: str):
+        self.cur.execute('DELETE FROM words WHERE chat_id = (?) AND native_word = (?) AND lang = (?)',
+                         (chat_id, native, lang))
         self.conn.commit()
 
     def get_word_for_editing(self, chat_id: int, native_word: str, lang: str):
@@ -87,14 +96,35 @@ class DataBase:
                          (group, chat_id, native_word, lang))
         self.conn.commit()
 
-    def chang_lang_code(self, chat_id: int, native_word: str, new_lang: str, old_lang: str):
+    def change_lang_code(self, chat_id: int, native_word: str, new_lang: str, old_lang: str):
         self.cur.execute('UPDATE words SET lang = (?) WHERE chat_id = (?) AND native_word = (?) AND lang = (?)',
                          (new_lang, chat_id, native_word, old_lang))
         self.conn.commit()
 
     def get_words_by_group(self, chat_id, group):
         # Fetch words for the specified group and chat_id
-        return self.fetchall('SELECT "foreign_word", "native_word", "group", "lang" FROM words WHERE chat_id = ? AND "group" = ?', (chat_id, group))
+        return self.fetchall('SELECT "foreign_word", "native_word", "group", "lang" '
+                             'FROM words WHERE chat_id = ? AND "group" = ?',
+                             (chat_id, group))
+
+    def get_flash_words(self, user_id, groups=None, languages=None):
+        query = 'SELECT "foreign_word", "native_word", "group", "lang" FROM "words" WHERE "chat_id" = ?'
+        params = [user_id]
+
+        # Apply filters
+        if groups and len(groups) > 0:
+            placeholders = ", ".join(["?"] * len(groups))
+            query += f' AND "group" IN ({placeholders})'
+            params.extend(groups)
+
+        if languages and len(languages) > 0:
+            placeholders = ", ".join(["?"] * len(languages))
+            query += f' AND "lang" IN ({placeholders})'
+            params.extend(languages)
+        print(params)
+
+        self.cur.execute(query, params)
+        return self.cur.fetchall()
 
     def __del__(self):
         self.conn.close()
