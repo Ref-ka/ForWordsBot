@@ -1,152 +1,125 @@
-from aiogram import Router, F, Dispatcher
-from aiogram.filters import Command, StateFilter
+from aiogram import Router, F
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import (
-    Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
-)
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 router = Router()
 
 
-# --- Edit Word FSM ---
-
 class EditWord(StatesGroup):
-    waiting_native_lang = State()
-    choosing_action = State()
-    changing_foreign = State()
-    changing_native = State()
-    changing_group = State()
-    changing_lang = State()
-    confirming_delete = State()
+    waiting_for_pair = State()  # after /edit
+    choosing_action = State()  # after showing delete/change buttons
+    waiting_confirmation = State()  # confirm delete
+    waiting_new_value = State()  # entering new value for a field
+
+
+# map short field tags to (prompt, db_method_name, success_text)
+FIELD_MAP = {
+    'fgn': ("Enter new foreign word:", "change_foreign_word", "✅ Foreign word changed."),
+    'ntv': ("Enter new native word:", "change_native_word", "✅ Native word changed."),
+    'grp': ("Enter new group:", "change_group", "✅ Group changed."),
+    'lng': ("Enter new lang code:", "change_lang_code", "✅ Lang code changed."),
+}
 
 
 @router.message(Command("edit"))
-async def edit_words(message: Message, state: FSMContext):
-    await message.answer("Write word in native language and foreign lang code (separated by space)")
-    await state.set_state(EditWord.waiting_native_lang)
+async def cmd_edit(message: Message, state: FSMContext):
+    await message.answer("Send me: <native_word> <lang_code>")
+    await state.set_state(EditWord.waiting_for_pair)
 
 
-@router.message(EditWord.waiting_native_lang)
-async def select_edit_word(message: Message, state: FSMContext, dispatcher: Dispatcher):
-    try:
-        native, lang = message.text.split(" ")
-    except Exception:
-        await message.answer("You need to write two words: word in native and lang code\nFor example: (target ru)")
-        return
+@router.message(EditWord.waiting_for_pair)
+async def select_word(message: Message, state: FSMContext, dispatcher):
+    parts = message.text.split()
+    if len(parts) != 2:
+        return await message.answer("⚠️ Please send exactly two words: `<native> <lang_code>`.")
+    native, lang = parts
     db = dispatcher["db"]
-    data = db.get_word_for_editing(message.chat.id, native, lang)
-    if not data:
-        await message.answer("There are no any words with this pair of native word and lang!\nEnter again:")
-        return
-    word = data[0]
+    res = db.get_word_for_editing(message.chat.id, native, lang)
+    if not res:
+        return await message.answer("❌ No such word. Try again:")
+    word = res[0]
     await state.update_data(word=word)
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Delete", callback_data="edit_del"),
-         InlineKeyboardButton(text="Change", callback_data="edit_change")]
-    ])
-    await message.answer(f"Editing word:\n{word}", reply_markup=kb)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🗑 Delete", callback_data="del"),
+             InlineKeyboardButton(text="✏️ Change", callback_data="change")],
+        ]
+    )
+    await message.answer(f"Editing:\n{word}", reply_markup=kb)
     await state.set_state(EditWord.choosing_action)
 
 
-@router.callback_query(EditWord.choosing_action, F.data == "edit_del")
-async def confirm_delete(call: CallbackQuery, state: FSMContext):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Yes", callback_data="edit_del_yes"),
-         InlineKeyboardButton(text="No", callback_data="edit_del_no")]
-    ])
+@router.callback_query(EditWord.choosing_action, F.data.in_(["del", "change"]))
+async def choose_action(cb: CallbackQuery, state: FSMContext, dispatcher):
     data = await state.get_data()
-    await call.message.edit_text(f"Deleting word:\n{data['word']}\nConfirm?", reply_markup=kb)
-    await state.set_state(EditWord.confirming_delete)
+    word = data["word"]
+    if cb.data == "del":
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[
+                InlineKeyboardButton(text="Yes, delete 🗑", callback_data="del_yes"),
+                InlineKeyboardButton(text="No, cancel ❌", callback_data="del_no"),
+            ]]
+        )
+        await cb.message.edit_text(f"Confirm deletion of:\n{word}", reply_markup=kb)
+        await state.set_state(EditWord.waiting_confirmation)
+
+    else:  # change
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="Foreign", callback_data="change_fgn"),
+                    InlineKeyboardButton(text="Native", callback_data="change_ntv"),
+                ],
+                [
+                    InlineKeyboardButton(text="Group", callback_data="change_grp"),
+                    InlineKeyboardButton(text="Lang", callback_data="change_lng"),
+                ],
+            ]
+        )
+        await cb.message.edit_text(f"Choose field to change:\n{word}", reply_markup=kb)
+        # state remains choosing_action
 
 
-@router.callback_query(EditWord.confirming_delete, F.data == "edit_del_yes")
-async def do_delete(call: CallbackQuery, state: FSMContext, dispatcher: Dispatcher):
-    data = await state.get_data()
-    word = data['word']
+# confirm delete or field‐selection
+@router.callback_query(EditWord.waiting_confirmation, F.data.in_(["del_yes", "del_no"]) | F.data.startswith("change_"))
+async def on_confirm_or_field(cb: CallbackQuery, state: FSMContext, dispatcher):
     db = dispatcher["db"]
-    db.delete_word(call.message.chat.id, word[1], word[3])
-    await call.message.answer("Word deleted successfully.")
-    await state.clear()
-
-
-@router.callback_query(EditWord.confirming_delete, F.data == "edit_del_no")
-async def cancel_delete(call: CallbackQuery, state: FSMContext):
-    await call.message.answer("Deletion cancelled.")
-    await state.clear()
-
-
-@router.callback_query(EditWord.choosing_action, F.data == "edit_change")
-async def choose_change(call: CallbackQuery, state: FSMContext):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Change foreign", callback_data="edit_change_fgn"),
-         InlineKeyboardButton(text="Change native", callback_data="edit_change_ntv")],
-        [InlineKeyboardButton(text="Change group", callback_data="edit_change_grp"),
-         InlineKeyboardButton(text="Change lang code", callback_data="edit_change_lng")]
-    ])
     data = await state.get_data()
-    await call.message.edit_text(f"Choose what to change:\n{data['word']}", reply_markup=kb)
+    word = data["word"]
+
+    if cb.data == "del_yes":
+        db.delete_word(cb.message.chat.id, word[1], word[3])
+        await cb.message.edit_text("✅ Word deleted.")
+        return await state.clear()
+
+    if cb.data == "del_no":
+        await cb.message.edit_text("❌ Deletion canceled.")
+        return await state.clear()
+
+    # else it's change_<tag>
+    tag = cb.data.split("_", 1)[1]  # e.g. "fgn"
+    prompt, method_name, _ = FIELD_MAP[tag]
+    await state.update_data(field_tag=tag)
+    await cb.message.edit_text(prompt)
+    await state.set_state(EditWord.waiting_new_value)
 
 
-@router.callback_query(EditWord.choosing_action, F.data == "edit_change_fgn")
-async def ask_foreign(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text("Enter new foreign word:")
-    await state.set_state(EditWord.changing_foreign)
-
-
-@router.message(EditWord.changing_foreign)
-async def do_change_foreign(message: Message, state: FSMContext, dispatcher: Dispatcher):
+@router.message(EditWord.waiting_new_value)
+async def set_new_value(message: Message, state: FSMContext, dispatcher):
     data = await state.get_data()
-    word = data['word']
+    word = data["word"]
+    tag = data["field_tag"]
+    prompt, method_name, success = FIELD_MAP[tag]
+
+    # dynamically call e.g. db.change_foreign_word(chat_id, old_native, new_value, old_lang)
     db = dispatcher["db"]
-    db.change_foreign_word(message.chat.id, word[1], message.text, word[3])
-    await message.answer("Foreign word has been changed!")
-    await state.clear()
-
-
-@router.callback_query(EditWord.choosing_action, F.data == "edit_change_ntv")
-async def ask_native(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text("Enter new native word:")
-    await state.set_state(EditWord.changing_native)
-
-
-@router.message(EditWord.changing_native)
-async def do_change_native(message: Message, state: FSMContext, dispatcher: Dispatcher):
-    data = await state.get_data()
-    word = data['word']
-    db = dispatcher["db"]
-    db.change_native_word(message.chat.id, word[1], message.text, word[3])
-    await message.answer("Native word has been changed!")
-    await state.clear()
-
-
-@router.callback_query(EditWord.choosing_action, F.data == "edit_change_grp")
-async def ask_group(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text("Enter new group:")
-    await state.set_state(EditWord.changing_group)
-
-
-@router.message(EditWord.changing_group)
-async def do_change_group(message: Message, state: FSMContext, dispatcher: Dispatcher):
-    data = await state.get_data()
-    word = data['word']
-    db = dispatcher["db"]
-    db.change_group(message.chat.id, word[1], message.text, word[3])
-    await message.answer("Group of word has been changed!")
-    await state.clear()
-
-
-@router.callback_query(EditWord.choosing_action, F.data == "edit_change_lng")
-async def ask_lang(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text("Enter new lang code:")
-    await state.set_state(EditWord.changing_lang)
-
-
-@router.message(EditWord.changing_lang)
-async def do_change_lang(message: Message, state: FSMContext, dispatcher: Dispatcher):
-    data = await state.get_data()
-    word = data['word']
-    db = dispatcher["db"]
-    db.change_lang_code(message.chat.id, word[1], message.text, word[3])
-    await message.answer("Lang code of word has been changed!")
+    getattr(db, method_name)(
+        message.chat.id,
+        word[1],  # old native
+        message.text,  # new value
+        word[3],  # old lang
+    )
+    await message.answer(success)
     await state.clear()
