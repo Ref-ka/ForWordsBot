@@ -1,117 +1,128 @@
-from aiogram import Router, F, Dispatcher
+from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import (
-    Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
-)
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 import random
 
 router = Router()
 
 
-class Flashcards(StatesGroup):
-    ask_random = State()
-    ask_groups = State()
-    ask_langs = State()
-    in_flash = State()
-    finished = State()
+class Flash(StatesGroup):
+    ACTIVE = State()
+    DONE = State()
 
 
 @router.message(Command("flash"))
-async def start_flashcards(message: Message, state: FSMContext):
-    kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Yes")], [KeyboardButton(text="No")]],
-        resize_keyboard=True
+async def cmd_flash(message: Message, state: FSMContext):
+    await state.clear()  # reset any old data
+    kb = InlineKeyboardMarkup(
+        row_width=2,
+        inline_keyboard=[[
+            InlineKeyboardButton(text="Yes", callback_data="rnd:yes"),
+            InlineKeyboardButton(text="No", callback_data="rnd:no")]]
     )
-    await message.answer("Do you want the flashcards to be randomized?", reply_markup=kb)
-    await state.set_state(Flashcards.ask_random)
+    await message.answer("Randomize cards?", reply_markup=kb)
+    await state.set_state(Flash.ACTIVE)
+    await state.update_data(step="ask_random")
 
 
-@router.message(Flashcards.ask_random)
-async def process_flashcard_random(message: Message, state: FSMContext):
-    if message.text not in ("Yes", "No"):
-        await message.answer("Your answer isn't correct. You need to just write 'Yes' or 'No'.")
-        return
-    await state.update_data(random=(message.text == "Yes"))
-    await message.answer(
-        "Select groups for flashcards (comma with space separated) or type 'all' for all groups:",
-        reply_markup=None
+# handle the YES/NO inline buttons
+@router.callback_query(Flash.ACTIVE, F.data.startswith("rnd:"))
+async def cq_random(call: CallbackQuery, state: FSMContext):
+    is_rand = call.data.split(":", 1)[1] == "yes"
+    await state.update_data(random=is_rand, step="ask_groups")
+    await call.message.edit_text("Enter groups (comma-separated) or ‘all’:", reply_markup=None)
+
+
+# now single message handler for the rest of the text inputs
+@router.message(Flash.ACTIVE)
+async def flash_flow(message: Message, state: FSMContext, dispatcher):
+    data = await state.get_data()
+    step = data.get("step")
+
+    # 1) groups
+    if step == "ask_groups":
+        groups = [] if message.text.lower() == "all" else message.text.split(",")
+        await state.update_data(groups=groups, step="ask_langs")
+        return await message.answer("Enter languages (comma-separated) or ‘all’:")
+
+        # 2) langs
+    if step == "ask_langs":
+        langs = [] if message.text.lower() == "all" else message.text.split(",")
+        await state.update_data(langs=langs)
+
+        # fetch words
+        db = dispatcher["db"]
+        words = db.get_flash_words(message.chat.id, data["groups"], langs)
+        if not words:
+            await state.clear()
+            return await message.answer("No words found with those filters.")
+
+        if data["random"]:
+            random.shuffle(words)
+
+        # store and show first card
+        await state.update_data(words=words, idx=0, step="show")
+        return await _show_card(message, state)
+
+
+# helper to display a card
+async def _show_card(target, state: FSMContext):
+    data = await state.get_data()
+    w = data["words"][data["idx"]]
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Show Answer", callback_data="action:show")
+    ]]
     )
-    await state.set_state(Flashcards.ask_groups)
+    await target.answer(f"🔤  {w[0]}\nWhat’s the translation?", reply_markup=kb)
 
 
-@router.message(Flashcards.ask_groups)
-async def process_flashcard_groups(message: Message, state: FSMContext):
-    groups = [] if message.text.lower() == "all" else message.text.split(", ")
-    await state.update_data(groups=groups)
-    await message.answer(
-        "Select languages (comma and space separated) or type 'all' for all languages:"
+# show answer
+@router.callback_query(Flash.ACTIVE, F.data == "action:show")
+async def cq_show(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    w = data["words"][data["idx"]]
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Next", callback_data="action:next")]]
     )
-    await state.set_state(Flashcards.ask_langs)
+    await call.message.edit_text(f"🔤  {w[0]}\n✅  {w[1]}", reply_markup=kb)
 
 
-@router.message(Flashcards.ask_langs)
-async def process_flashcard_languages(message: Message, state: FSMContext, dispatcher: Dispatcher):
-    langs = [] if message.text.lower() == "all" else message.text.split(", ")
+# next card or finish
+@router.callback_query(Flash.ACTIVE, F.data == "action:next")
+async def cq_next(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    db = dispatcher["db"]
-    words = db.get_flash_words(message.chat.id, data["groups"], langs)
-    if not words:
-        await message.answer("No words found for the selected filters.")
-        await state.clear()
-        return
-    if data["random"]:
-        random.shuffle(words)
-    await state.update_data(words=words, index=0)
-    await show_flashcard(message, state)
+    idx = data["idx"] + 1
+
+    # if more cards left
+    if idx < len(data["words"]):
+        await state.update_data(idx=idx)
+        return await _show_card(call.message, state)
+
+    # else finished
+    kb = InlineKeyboardMarkup(
+        row_width=2,
+        inline_keyboard=[[
+            InlineKeyboardButton(text="🔄 Retry", callback_data="action:retry"),
+            InlineKeyboardButton(text="📂 New", callback_data="action:new"),
+        ]]
+    )
+    await call.message.answer("You’ve seen them all. What now?", reply_markup=kb)
+    await state.set_state(Flash.DONE)
 
 
-async def show_flashcard(message: Message, state: FSMContext):
-    data = await state.get_data()
-    index = data["index"]
-    words = data["words"]
-    if index >= len(words):
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Retry These Words", callback_data="flash_retry")],
-            [InlineKeyboardButton(text="📂 Choose New Groups/Languages", callback_data="flash_new")]
-        ])
-        await message.answer("You've gone through all words! What do you want to do next?", reply_markup=kb)
-        await state.set_state(Flashcards.finished)
-        return
-    word = words[index]
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Show Answer", callback_data="flash_show")]
-    ])
-    await message.answer(f"Flashcard:\nWord: {word[0]}\nWhat is the translation?", reply_markup=kb)
-    await state.set_state(Flashcards.in_flash)
+# retry same deck
+@router.callback_query(Flash.DONE, F.data == "action:retry")
+async def cq_retry(call: CallbackQuery, state: FSMContext):
+    await state.update_data(idx=0)
+    await state.set_state(Flash.ACTIVE)
+    return await _show_card(call.message, state)
 
 
-@router.callback_query(Flashcards.in_flash, F.data == "flash_show")
-async def flash_show_answer(call: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    index = data["index"]
-    word = data["words"][index]
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Next", callback_data="flash_next")]
-    ])
-    await call.message.edit_text(f"Flashcard:\nWord: {word[0]}\nTranslation: {word[1]}", reply_markup=kb)
-
-
-@router.callback_query(Flashcards.in_flash, F.data == "flash_next")
-async def flash_next(call: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    await state.update_data(index=data["index"] + 1)
-    await show_flashcard(call.message, state)
-
-
-@router.callback_query(Flashcards.finished, F.data == "flash_retry")
-async def flash_retry(call: CallbackQuery, state: FSMContext):
-    await state.update_data(index=0)
-    await show_flashcard(call.message, state)
-
-
-@router.callback_query(Flashcards.finished, F.data == "flash_new")
-async def flash_new(call: CallbackQuery, state: FSMContext):
-    await call.message.answer("Let's choose new words! Enter the groups you want to study:")
-    await state.set_state(Flashcards.ask_groups)
+# pick new filters
+@router.callback_query(Flash.DONE, F.data == "action:new")
+async def cq_new(call: CallbackQuery, state: FSMContext):
+    await state.update_data(step="ask_groups")
+    await state.set_state(Flash.ACTIVE)
+    return await call.message.answer("Enter groups (comma-separated) or ‘all’:")
