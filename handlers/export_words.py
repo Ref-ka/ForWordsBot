@@ -1,84 +1,68 @@
+import io
 import csv
 import json
-import shutil
-import tempfile
-import aiofiles
-import os
-from aiogram import Router, Dispatcher
+from aiogram import Router, F, Dispatcher
 from aiogram.filters import Command
-from aiogram.filters import StateFilter
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, FSInputFile
-
-from keyboards.row import make_row_keyboard
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    BufferedInputFile,
+)
 
 router = Router()
 
 
-class ExportWords(StatesGroup):
-    entering_export_format = State()
+@router.message(Command("export"))
+async def cmd_export(message: Message):
+    # build an inline keyboard with three buttons
+    buttons = [[
+        InlineKeyboardButton(text=f, callback_data=f"export:{f}")
+        for f in ("txt", "csv", "json")
+    ]]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons, row_width=3)
+    await message.answer("Choose export format:", reply_markup=keyboard)
 
 
-async def make_txt(words, message: Message):
-    with tempfile.NamedTemporaryFile('w+', encoding='utf-8', delete=False, suffix='.txt') as tmp:
-        filename = tmp.name
-
-    async with aiofiles.open(filename, "w", encoding="utf-8") as file:
-        for line in words:
-            await file.write(f"{line[0]} --- {line[1]}\n")
-
-    await message.reply_document(FSInputFile(filename))
-    os.remove(filename)
-
-
-async def make_csv(words, message: Message):
-    with tempfile.NamedTemporaryFile('w+', encoding='utf-8', delete=False, suffix='.csv', newline='') as tmp:
-        filename = tmp.name
-
-    with open(filename, "w", encoding="utf-8", newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(["Foreign", "Native"])
-        for line in words:
-            writer.writerow([line[0], line[1]])
-
-    await message.reply_document(FSInputFile(filename))
-    os.remove(filename)
-
-
-async def make_json(words, message: Message):
-    with tempfile.NamedTemporaryFile('w+', encoding='utf-8', delete=False, suffix='.json') as tmp:
-        filename = tmp.name
-
-    words_list = [{"foreign": line[0], "native": line[1]} for line in words]
-    async with aiofiles.open(filename, "w", encoding="utf-8") as file:
-        await file.write(json.dumps(words_list, ensure_ascii=False, indent=2))
-
-    await message.reply_document(FSInputFile(filename))
-    os.remove(filename)
-
-
-@router.message(StateFilter(None), Command("export"))
-async def export_words(message: Message, state: FSMContext):
-    await message.answer("Choose export format: txt, csv, or json",
-                         reply_markup=make_row_keyboard(["txt", "csv", "json"], inline=False))
-    await state.set_state(ExportWords.entering_export_format)
-
-
-@router.message(ExportWords.entering_export_format)
-async def process_export_format(message: Message, state: FSMContext, dispatcher: Dispatcher):
-    export_format = message.text
+@router.callback_query(F.data.startswith("export:"))
+async def cb_export_format(query: CallbackQuery, dispatcher: Dispatcher):
+    # parse format out of the callback data
+    fmt = query.data.split(":", maxsplit=1)[1]
+    # fetch your data however you like
     db = dispatcher["db"]
-    words = db.get_show_words(message.chat.id)
+    words = db.get_show_words(query.message.chat.id)
+    words = [(row[0], row[1]) for row in words]
 
-    if export_format == "txt":
-        await make_txt(words, message)
-    elif export_format == "csv":
-        await make_csv(words, message)
-    elif export_format == "json":
-        await make_json(words, message)
+    if fmt == "txt":
+        payload = "\n".join(f"{f} --- {n}" for f, n in words)
+        bio = io.BytesIO(payload.encode("utf-8"))
+        filename = "words.txt"
+
+    elif fmt == "csv":
+        # write CSV into a StringIO and then get bytes
+        s = io.StringIO()
+        w = csv.writer(s)
+        w.writerow(["Foreign", "Native"])
+        w.writerows(words)
+        bio = io.BytesIO(s.getvalue().encode("utf-8"))
+        filename = "words.csv"
+
+    elif fmt == "json":
+        payload = json.dumps(
+            [{"foreign": f, "native": n} for f, n in words],
+            ensure_ascii=False,
+            indent=2,
+        )
+        bio = io.BytesIO(payload.encode("utf-8"))
+        filename = "words.json"
+
     else:
-        await message.reply("Export option is invalid! Please enter again.",
-                            reply_markup=make_row_keyboard(["txt", "csv", "json"], inline=False))
-        await state.set_state(ExportWords.entering_export_format)
-    await state.set_state()
+        # invalid format
+        await query.answer("Invalid format, try again.", show_alert=True)
+        return
+
+    # wrap our BytesIO in an InputFile and send
+    bio.seek(0)
+    document = BufferedInputFile(bio.read(), filename)  # , filename=filename
+    await query.message.answer_document(document)
