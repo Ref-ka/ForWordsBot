@@ -23,6 +23,8 @@ class DataBase:
         return self.cur.fetchone()
 
     def fetchall(self, arg, values=None):
+        print(arg)
+        print(values)
         if values is None:
             self.cur.execute(arg)
         else:
@@ -51,17 +53,17 @@ class DataBase:
             return self.fetchall(
                 f'SELECT "foreign_word", "native_word", "group", "lang" '
                 f'FROM words WHERE "chat_id" = (?) '
-                f'AND "group" IN ({groups_placeholders}) AND "lang" = ({langs_placeholders})',
+                f'AND "group" IN ({groups_placeholders}) AND "lang" IN ({langs_placeholders})',
                 params)
         elif groups and not langs:
             return self.fetchall(
                 f'SELECT "foreign_word", "native_word", "group", "lang" '
-                f'FROM words WHERE "chat_id" = (?) AND "group" = ({groups_placeholders})',
+                f'FROM words WHERE "chat_id" = (?) AND "group" IN ({groups_placeholders})',
                 params)
         elif not groups and langs:
             return self.fetchall(
                 f'SELECT "foreign_word", "native_word", "group", "lang" '
-                f'FROM words WHERE "chat_id" = (?) AND "lang" = ({langs_placeholders})',
+                f'FROM words WHERE "chat_id" = (?) AND "lang" IN ({langs_placeholders})',
                 params)
         else:
             return self.fetchall(
