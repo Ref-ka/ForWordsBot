@@ -42,9 +42,9 @@ async def add_word(
     db = dispatcher["db"]
     db.input_word(
         chat_id=message.chat.id,
-        foreign=foreign,
+        foreign_word=foreign,
         lang=lang,
-        native=native,
+        native_word=native,
         group=group
     )
 
