@@ -3,7 +3,7 @@ import sqlite3 as lite
 
 class DataBase:
     def __init__(self):
-        self.conn = lite.connect("EngTeacher.db", check_same_thread=False)
+        self.conn = lite.connect("utils/EngTeacher.db", check_same_thread=False)
         self.conn.execute('pragma foreign_keys = on')
         self.conn.commit()
         self.cur = self.conn.cursor()
@@ -29,7 +29,7 @@ class DataBase:
             self.cur.execute(arg, values)
         return self.cur.fetchall()
 
-    def input_words(self, chat_id, foreign_word, native_word, group, lang):
+    def input_word(self, chat_id, foreign_word, lang, native_word, group):
         # Insert the word with the given group
         self.cur.execute('INSERT INTO words ("chat_id", "foreign_word", "native_word", "group", "lang") VALUES (?, ?, ?, ?, ?)',
                          (chat_id,
@@ -39,14 +39,14 @@ class DataBase:
                           lang))
         self.conn.commit()
 
-    def get_show_words(self, chat_id, groups=None, langs=None):
+    def get_show_words(self, chat_id, groups: list = None, langs: list = None):
         if not groups:
             groups = []
         if not langs:
             langs = []
         groups_placeholders = ", ".join(["?"] * len(groups))
         langs_placeholders = ", ".join(["?"] * len(langs))
-        params = [chat_id] + groups + langs
+        params = tuple([chat_id] + groups + langs)
         if groups and langs:
             return self.fetchall(
                 f'SELECT "foreign_word", "native_word", "group", "lang" '
