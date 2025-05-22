@@ -24,15 +24,15 @@ FIELD_MAP = {
 
 @router.message(Command("edit"))
 async def cmd_edit(message: Message, state: FSMContext):
-    await message.answer("Send me `(native_word) (lang_code)`")
+    await message.answer("Send me `(native_word)|(lang_code)`")
     await state.set_state(EditWord.waiting_for_pair)
 
 
 @router.message(EditWord.waiting_for_pair)
 async def select_word(message: Message, state: FSMContext, dispatcher):
-    parts = message.text.split()
+    parts = message.text.split("|")
     if len(parts) != 2:
-        return await message.answer("⚠️ Please send exactly two words: `(native) (lang_code)`")
+        return await message.answer("⚠️ Please send exactly two words: `(native)|(lang_code)`")
     native, lang = parts
     db = dispatcher["db"]
     res = db.get_word_for_editing(message.chat.id, native, lang)
