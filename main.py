@@ -7,7 +7,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
 import config
-from handlers import add_word, common, edit_words, export_words, flashcards, reminders, show_words
+from handlers import add_word, common, edit_words, export_words, flashcards, reminders, show_words, examples
 from utils.database import DataBase
 
 
@@ -32,7 +32,8 @@ async def main() -> None:
         export_words.router,
         flashcards.router,
         reminders.router,
-        show_words.router
+        show_words.router,
+        examples.router,
     )
 
     await dp.start_polling(bot)
